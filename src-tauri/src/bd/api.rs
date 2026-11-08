@@ -2,7 +2,7 @@
 #[path = "api/policy.rs"]
 mod policy;
 
-use super::runner::find_bd;
+use super::runner::{command_project_path, find_bd};
 use policy::{commit_policy_requires_cli, supported_version};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -116,9 +116,11 @@ fn workspace_gate(path: &Path) -> Arc<Mutex<()>> {
 }
 
 async fn native(binary: &Path, project: &str, args: &[&str]) -> Result<String, String> {
+    let project = command_project_path(project);
     let child = Command::new(binary)
-        .current_dir(project)
-        .args(["-C", project])
+        .current_dir(&project)
+        .arg("-C")
+        .arg(&project)
         .args(args)
         .env("BD_NON_INTERACTIVE", "1")
         .stdin(Stdio::null())
@@ -758,9 +760,12 @@ impl BeadsDataSource {
             return Ok(());
         }
         tokio::time::timeout(Duration::from_secs(30), async {
+            let project = command_project_path(&self.project_path);
             let mut child = Command::new(&self.inner.binary)
-                .current_dir(&self.project_path)
-                .args(["-C", &self.project_path, "serve", "--addr", "127.0.0.1:0"])
+                .current_dir(&project)
+                .arg("-C")
+                .arg(&project)
+                .args(["serve", "--addr", "127.0.0.1:0"])
                 .env("BD_NON_INTERACTIVE", "1")
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())

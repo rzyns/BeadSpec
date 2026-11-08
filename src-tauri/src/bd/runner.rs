@@ -30,6 +30,41 @@ pub struct BdRunner {
     pub project_path: String,
 }
 
+/// Beads' embedded backend cannot open Windows verbatim project paths.
+/// Convert only subprocess inputs; registry and watcher identities stay canonical.
+pub(super) fn command_project_path(project: &str) -> PathBuf {
+    let path = PathBuf::from(project);
+    #[cfg(windows)]
+    {
+        use std::ffi::OsString;
+        use std::path::{Component, Prefix};
+
+        let mut components = path.components();
+        let mut conventional = match components.next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:\\", char::from(drive))),
+                Prefix::VerbatimUNC(server, share) => {
+                    let mut root = OsString::from(r"\\");
+                    root.push(server);
+                    root.push(r"\");
+                    root.push(share);
+                    root.push(r"\");
+                    PathBuf::from(root)
+                }
+                _ => return path,
+            },
+            _ => return path,
+        };
+        if components.next() != Some(Component::RootDir) {
+            return path;
+        }
+        conventional.extend(components);
+        conventional
+    }
+    #[cfg(not(windows))]
+    path
+}
+
 impl BdRunner {
     /// Locate `bd`, consulting `settings_bd_path` override first, then a known fallback,
     /// then PATH. Prefer this over `new` in Tauri commands that have access to AppSettings.
@@ -56,7 +91,7 @@ impl BdRunner {
         let timeout = classify_bd_timeout(args);
 
         let bd_str = self.bd_path.to_string_lossy();
-        let cwd = std::path::Path::new(&self.project_path);
+        let cwd = command_project_path(&self.project_path);
 
         // Prepend BD_NON_INTERACTIVE via a wrapper: we pass the binary path as the
         // command and relay all args.  spawn_managed does not expose env-var injection
@@ -364,6 +399,35 @@ pub async fn spawn_managed(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[cfg(windows)]
+    #[test]
+    fn command_project_path_converts_disk_and_unc_without_changing_other_paths() {
+        for (input, expected) in [
+            (r"\\?\C:\repo with spaces", r"C:\repo with spaces"),
+            (r"\\?\C:\", r"C:\"),
+            (r"\\?\UNC\server\share\repo", r"\\server\share\repo"),
+            (r"C:\repo", r"C:\repo"),
+            (r"\\server\share\repo", r"\\server\share\repo"),
+            (r"\\.\C:\repo", r"\\.\C:\repo"),
+            (r"\\?\Volume{test}\repo", r"\\?\Volume{test}\repo"),
+        ] {
+            assert_eq!(
+                command_project_path(input),
+                PathBuf::from(expected),
+                "{input}"
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn command_project_path_preserves_unix_paths() {
+        assert_eq!(
+            command_project_path("/tmp/repo"),
+            PathBuf::from("/tmp/repo")
+        );
+    }
 
     /// A long-running command that should be killed by the timeout.
     /// Uses `sh -c` to ensure portability on macOS/Linux.

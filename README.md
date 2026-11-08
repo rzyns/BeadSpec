@@ -68,6 +68,26 @@ When `openspec` is installed, BeadSpec gains a dedicated **OpenSpec tab** and se
 
 ## Install
 
+### Windows Scoop package (rzyns fork)
+
+```powershell
+scoop bucket add rzyns https://github.com/rzyns/scoop-bucket
+scoop install rzyns/beadspec
+```
+
+Install `bd` 1.3 or newer and Microsoft Edge WebView2 Runtime before launching.
+Scoop manages updates for this build; its upstream in-app updater is disabled.
+Project databases and app settings remain outside the Scoop installation directory.
+
+To build the portable x64 ZIP and SHA256 file, install dependencies with
+`bun install --frozen-lockfile`, then run `pwsh -File scripts/package-windows.ps1`.
+Publish the files in `dist/` to this fork with tag
+`scoop-v<version>-rzyns.<revision>` (for example, `scoop-v0.1.4-rzyns.1`).
+Increment `-Revision` for another build of the same upstream version. These fork
+tags do not trigger the upstream signing workflow.
+
+### Upstream installers
+
 Download the latest installer from the [Releases page](https://github.com/boardthatpowder/BeadSpec/releases/latest):
 
 | Platform | File |
