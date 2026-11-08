@@ -79,6 +79,11 @@ Install `bd` 1.3 or newer and Microsoft Edge WebView2 Runtime before launching.
 Scoop manages updates for this build; its upstream in-app updater is disabled.
 Project databases and app settings remain outside the Scoop installation directory.
 
+Background checks run without console windows and keep their output and errors.
+GitNexus queries use an existing local/cached CLI; install that optional tool
+separately to enable its integration. A failed query is shown as unavailable,
+with its diagnostic, rather than as a fresh index.
+
 To build the portable x64 ZIP and SHA256 file, install dependencies with
 `bun install --frozen-lockfile`, then run `pwsh -File scripts/package-windows.ps1`.
 Publish the files in `dist/` to this fork with tag

@@ -1,7 +1,7 @@
+use crate::background::command;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BdError {
@@ -98,7 +98,7 @@ impl BdRunner {
         // directly, so we shell out via the path but set the env on the Command inside
         // spawn_managed by building the child ourselves here.
         use std::process::Stdio as SStdio;
-        let mut child = Command::new(bd_str.as_ref())
+        let mut child = command(bd_str.as_ref())
             .args(args)
             .env("BD_NON_INTERACTIVE", "1")
             .current_dir(cwd)
@@ -309,7 +309,7 @@ pub async fn spawn_managed(
 ) -> Result<ManagedOutput, SpawnError> {
     use tokio::io::AsyncReadExt;
 
-    let mut builder = Command::new(cmd);
+    let mut builder = command(cmd);
     builder
         .args(args)
         .current_dir(cwd)

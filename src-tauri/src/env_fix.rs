@@ -15,7 +15,6 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 
 /// Repair the process `PATH` so spawned tools resolve like they would from a
@@ -70,7 +69,7 @@ fn shell_path() -> Option<String> {
         return None;
     }
     let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty())?;
-    let mut child = Command::new(&shell)
+    let mut child = crate::background::std_command(&shell)
         .arg("-ilc")
         .arg("printf %s \"$PATH\"")
         .stdin(std::process::Stdio::null())

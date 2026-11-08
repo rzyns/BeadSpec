@@ -1,3 +1,4 @@
+mod background;
 pub mod bd;
 pub mod commands;
 pub mod db;

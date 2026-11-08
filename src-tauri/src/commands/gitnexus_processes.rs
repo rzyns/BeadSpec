@@ -93,7 +93,9 @@ pub(crate) async fn gitnexus_cli_json(
     }
 
     let npx = find_npx().ok_or_else(|| "gitnexus_cli_unavailable: npx not found".to_string())?;
-    let mut full_args = vec!["gitnexus"];
+    // Polling must use an existing installation/cache rather than install tools
+    // or prompt for approval in a hidden background process.
+    let mut full_args = vec!["--offline", "--no-install", "gitnexus"];
     full_args.extend_from_slice(args);
     let out = spawn_managed(
         &npx.to_string_lossy(),
@@ -486,36 +488,33 @@ async fn files_for_issue(project_path: &str, issue_id: &str) -> HashSet<String> 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_gitnexus_index_status(project_path: String) -> Result<IndexStatus, String> {
-    let value = gitnexus_cli_json(&project_path, &["list", "--json"], 60)
-        .await
-        .ok();
-    let last_indexed_at = value.as_ref().and_then(find_last_indexed_at);
-    let age_seconds = last_indexed_at
-        .as_ref()
-        .and_then(|s| parse_ts_age_seconds(s))
-        .unwrap_or_else(cache_age_seconds);
-    Ok(IndexStatus {
-        last_indexed_at,
-        age_seconds,
-        stale: age_seconds > 14_400,
-    })
+    let value = gitnexus_cli_json(&project_path, &["status", "--json"], 60).await?;
+    index_status_from_value(&value)
 }
 
-fn find_last_indexed_at(value: &Value) -> Option<String> {
-    let repos = value
-        .as_array()
-        .or_else(|| value.get("repos").and_then(Value::as_array))?;
-    repos.iter().find_map(|repo| {
-        val_str(
-            repo,
-            &[
-                "indexed_at",
-                "indexedAt",
-                "last_indexed_at",
-                "lastIndexedAt",
-                "updated_at",
-            ],
-        )
+fn index_status_from_value(value: &Value) -> Result<IndexStatus, String> {
+    if let Some(error) = value.get("error").and_then(Value::as_str) {
+        return Err(format!("gitnexus_status: {error}"));
+    }
+    let last_indexed_at = value
+        .pointer("/index/indexedAt")
+        .and_then(Value::as_str)
+        .ok_or("gitnexus_index_timestamp_unavailable: GitNexus returned no index timestamp")?;
+    let age_seconds = parse_ts_age_seconds(last_indexed_at)
+        .ok_or("gitnexus_index_timestamp_invalid: GitNexus returned an invalid index timestamp")?;
+    let stale = match value.get("status").and_then(Value::as_str) {
+        Some("up-to-date") => false,
+        Some("stale") => true,
+        _ => {
+            return Err(
+                "gitnexus_status_unknown: GitNexus could not establish index freshness".into(),
+            )
+        }
+    };
+    Ok(IndexStatus {
+        last_indexed_at: Some(last_indexed_at.to_string()),
+        age_seconds,
+        stale,
     })
 }
 
@@ -532,10 +531,6 @@ fn parse_ts_age_seconds(ts: &str) -> Option<u32> {
             .max(0)
             .min(u32::MAX as i64) as u32,
     )
-}
-
-fn cache_age_seconds() -> u32 {
-    0
 }
 
 #[tauri::command]
@@ -628,6 +623,44 @@ pub async fn trigger_gitnexus_reanalyze(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_or_invalid_index_timestamp_is_not_reported_fresh() {
+        assert!(index_status_from_value(&serde_json::json!([])).is_err());
+        assert!(index_status_from_value(
+            &serde_json::json!({"status":"up-to-date","index":{"indexedAt":"invalid"}})
+        )
+        .is_err());
+        let error =
+            index_status_from_value(&serde_json::json!({"schemaVersion":1,"error":"not-indexed"}))
+                .unwrap_err();
+        assert!(error.contains("not-indexed"));
+    }
+
+    #[test]
+    fn status_uses_the_projects_reported_freshness_not_a_timestamp_guess() {
+        let fresh = index_status_from_value(
+            &serde_json::json!({"status":"up-to-date","index":{"indexedAt":"0"}}),
+        )
+        .unwrap();
+        assert!(!fresh.stale);
+        let recent = sqlx::types::chrono::Utc::now().to_rfc3339();
+        let status = index_status_from_value(
+            &serde_json::json!({"status":"stale","index":{"indexedAt":recent}}),
+        )
+        .unwrap();
+        assert!(status.stale);
+    }
+
+    #[tokio::test]
+    async fn failed_cli_probe_is_not_reported_fresh() {
+        let fixture = tempfile::tempdir().unwrap();
+        let missing_project = fixture.path().join("does-not-exist");
+        let error = get_gitnexus_index_status(missing_project.to_string_lossy().into_owned())
+            .await
+            .unwrap_err();
+        assert!(error.contains("gitnexus_"), "{error}");
+    }
 
     #[test]
     fn parse_processes_tolerates_empty() {

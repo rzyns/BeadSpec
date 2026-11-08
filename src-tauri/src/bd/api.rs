@@ -3,6 +3,7 @@
 mod policy;
 
 use super::runner::{command_project_path, find_bd};
+use crate::background::command;
 use policy::{commit_policy_requires_cli, supported_version};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -14,7 +15,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
+#[cfg(test)]
+use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
 
 pub const HISTORY_COVERAGE: &str = "Recent activity may exclude events from before live updates were enabled or outside retained history.";
@@ -117,7 +120,7 @@ fn workspace_gate(path: &Path) -> Arc<Mutex<()>> {
 
 async fn native(binary: &Path, project: &str, args: &[&str]) -> Result<String, String> {
     let project = command_project_path(project);
-    let child = Command::new(binary)
+    let child = command(binary)
         .current_dir(&project)
         .arg("-C")
         .arg(&project)
@@ -761,7 +764,7 @@ impl BeadsDataSource {
         }
         tokio::time::timeout(Duration::from_secs(30), async {
             let project = command_project_path(&self.project_path);
-            let mut child = Command::new(&self.inner.binary)
+            let mut child = command(&self.inner.binary)
                 .current_dir(&project)
                 .arg("-C")
                 .arg(&project)

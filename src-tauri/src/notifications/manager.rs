@@ -110,7 +110,7 @@ impl<R: Runtime> NotificationManager<R> {
 pub fn current_actor() -> String {
     std::env::var("BEADS_ACTOR")
         .or_else(|_| {
-            std::process::Command::new("git")
+            crate::background::std_command("git")
                 .args(["config", "user.name"])
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())

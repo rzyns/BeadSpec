@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, timeout};
 
@@ -157,7 +157,7 @@ impl DoltServerRegistry {
                 }
             };
 
-            let child_result = Command::new(&dolt_bin)
+            let child_result = crate::background::command(&dolt_bin)
                 .args([
                     "sql-server",
                     "-H",
